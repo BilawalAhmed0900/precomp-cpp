@@ -276,6 +276,7 @@ int penalty_bytes_len = 0;
 long long* ignore_list = NULL; // positions to ignore
 int ignore_list_len = 0;
 
+vector<vector<long long>*>* saved_input_file_pos_recursion_stack = new vector<vector<long long>*>();
 long long saved_input_file_pos, saved_cb;
 int min_ident_size = 4;
 int min_ident_size_intense_brute_mode = 64;
@@ -2360,6 +2361,65 @@ int init_comfort(int argc, char* argv[]) {
 #endif
 #endif
 
+void push_position_to_saved_input_file_pos_stack(long long new_pos)
+{
+  if (!saved_input_file_pos_recursion_stack->empty())
+  {
+    saved_input_file_pos_recursion_stack->back()->push_back(new_pos);
+  }
+}
+
+void pop_position_to_saved_input_file_pos_stack()
+{
+  if (!saved_input_file_pos_recursion_stack->empty())
+  {
+    saved_input_file_pos_recursion_stack->back()->pop_back();
+  }
+}
+
+void add_recursion_to_saved_input_file_pos_stack()
+{
+  saved_input_file_pos_recursion_stack->push_back(new vector<long long>());
+}
+
+void remove_recursion_from_saved_input_file_pos_stack()
+{
+  delete saved_input_file_pos_recursion_stack->back();
+  saved_input_file_pos_recursion_stack->pop_back();
+}
+
+string saved_input_file_pos_stack_to_string()
+{
+  stringstream ss;
+  for (size_t i = 0; i < saved_input_file_pos_recursion_stack->size(); i++)
+  {
+    if (saved_input_file_pos_recursion_stack->at(i)->empty())
+    {
+      ss << "[UNKNOWN POSITION]";
+    }
+    else
+    {
+      ss << saved_input_file_pos_recursion_stack->at(i)->back();
+    }
+
+    if (i < saved_input_file_pos_recursion_stack->size() - 1)
+    {
+      ss << '_';
+    }
+  }
+
+  return ss.str();
+}
+
+void delete_saved_input_file_pos_recursion_stack()
+{
+  while (!saved_input_file_pos_recursion_stack->empty())
+  {
+    remove_recursion_from_saved_input_file_pos_stack();
+  }
+  delete saved_input_file_pos_recursion_stack;
+}
+
 void denit_compress() {
 
   if (compression_otf_method != OTF_NONE) {
@@ -2437,6 +2497,7 @@ void denit_compress() {
   tempfilelist = (char*)realloc(tempfilelist, 20 * tempfilelist_count * sizeof(char));
 
   if (recursion_depth == 0) {
+    delete_saved_input_file_pos_recursion_stack();
     free(ignore_list);
   }
   if (decomp_io_buf != NULL) delete[] decomp_io_buf;
@@ -2477,6 +2538,10 @@ void denit_decompress() {
 
   tempfilelist_count -= 8;
   tempfilelist = (char*)realloc(tempfilelist, 20 * tempfilelist_count * sizeof(char));
+
+  if (recursion_depth == 0) {
+    delete_saved_input_file_pos_recursion_stack();
+  }
 
   denit();
 }
@@ -3076,7 +3141,7 @@ struct recompress_deflate_result {
 void debug_deflate_detected(const recompress_deflate_result& rdres, const char* type) {
   if (DEBUG_MODE) {
     print_debug_percent();
-    cout << "Possible zLib-Stream " << type << " found at position " << saved_input_file_pos << endl;
+    cout << "Possible zLib-Stream " << type << " found at position " << saved_input_file_pos_stack_to_string() << endl;
     cout << "Compressed size: " << rdres.compressed_stream_size << endl;
     cout << "Can be decompressed to " << rdres.uncompressed_stream_size << " bytes" << endl;
 
@@ -3683,7 +3748,10 @@ bool compress_file(float min_percent, float max_percent) {
   global_min_percent = min_percent;
   global_max_percent = max_percent;
 
-  if (recursion_depth == 0) write_header();
+  if (recursion_depth == 0) {
+    add_recursion_to_saved_input_file_pos_stack();
+    write_header();
+  }
   uncompressed_length = -1;
   uncompressed_bytes_total = 0;
   uncompressed_bytes_written = 0;
@@ -3752,6 +3820,7 @@ bool compress_file(float min_percent, float max_percent) {
 
           int header_length = 30 + filename_length + extra_field_length;
 
+          push_position_to_saved_input_file_pos_stack(input_file_pos);
           saved_input_file_pos = input_file_pos;
           saved_cb = cb;
 
@@ -3762,6 +3831,7 @@ bool compress_file(float min_percent, float max_percent) {
           cb += header_length;
 
           if (!compressed_data_found) {
+            pop_position_to_saved_input_file_pos_stack();
             input_file_pos = saved_input_file_pos;
             cb = saved_cb;
           }
@@ -3792,6 +3862,7 @@ bool compress_file(float min_percent, float max_percent) {
 
           int header_length = 10;
 
+          push_position_to_saved_input_file_pos_stack(input_file_pos);
           saved_input_file_pos = input_file_pos;
           saved_cb = cb;
 
@@ -3843,6 +3914,7 @@ bool compress_file(float min_percent, float max_percent) {
           }
 
           if (!compressed_data_found) {
+            pop_position_to_saved_input_file_pos_stack();
             input_file_pos = saved_input_file_pos;
             cb = saved_cb;
           }
@@ -3852,6 +3924,7 @@ bool compress_file(float min_percent, float max_percent) {
 
     if ((!compressed_data_found) && (use_pdf)) { // no Gzip header -> PDF FlateDecode?
       if (memcmp(in_buf + cb, "/FlateDecode", 12) == 0) {
+        push_position_to_saved_input_file_pos_stack(input_file_pos);
         saved_input_file_pos = input_file_pos;
         saved_cb = cb;
 
@@ -3990,6 +4063,7 @@ bool compress_file(float min_percent, float max_percent) {
         }
 
         if (!compressed_data_found) {
+          pop_position_to_saved_input_file_pos_stack();
           input_file_pos = saved_input_file_pos;
           cb = saved_cb;
         }
@@ -4003,6 +4077,7 @@ bool compress_file(float min_percent, float max_percent) {
         idat_lengths = (unsigned int*)(realloc(idat_lengths, 100 * sizeof(unsigned int)));
         idat_crcs = (unsigned int*)(realloc(idat_crcs, 100 * sizeof(unsigned int)));
 
+        push_position_to_saved_input_file_pos_stack(input_file_pos);
         saved_input_file_pos = input_file_pos;
         saved_cb = cb;
 
@@ -4095,6 +4170,7 @@ bool compress_file(float min_percent, float max_percent) {
         }
 
         if (!compressed_data_found) {
+          pop_position_to_saved_input_file_pos_stack();
           input_file_pos = saved_input_file_pos;
           cb = saved_cb;
         }
@@ -4118,12 +4194,14 @@ bool compress_file(float min_percent, float max_percent) {
               version[i] = in_buf[cb + i];
             }
 
+            push_position_to_saved_input_file_pos_stack(input_file_pos);
             saved_input_file_pos = input_file_pos;
             saved_cb = cb;
 
             try_decompression_gif(version);
 
             if (!compressed_data_found) {
+              pop_position_to_saved_input_file_pos_stack();
               input_file_pos = saved_input_file_pos;
               cb = saved_cb;
             }
@@ -4136,6 +4214,8 @@ bool compress_file(float min_percent, float max_percent) {
       if ((in_buf[cb] == 0xFF) && (in_buf[cb + 1] == 0xD8) && (in_buf[cb + 2] == 0xFF) && (
            (in_buf[cb + 3] == 0xC0) || (in_buf[cb + 3] == 0xC2) || (in_buf[cb + 3] == 0xC4) || ((in_buf[cb + 3] >= 0xDB) && (in_buf[cb + 3] <= 0xFE))
          )) { // SOI (FF D8) followed by a valid marker for Baseline/Progressive JPEGs
+
+        push_position_to_saved_input_file_pos_stack(input_file_pos);
         saved_input_file_pos = input_file_pos;
         saved_cb = cb;
 
@@ -4205,6 +4285,7 @@ bool compress_file(float min_percent, float max_percent) {
           try_decompression_jpg(jpg_length, progressive_flag);
         }
         if (!found || !compressed_data_found) {
+          pop_position_to_saved_input_file_pos_stack();
           input_file_pos = saved_input_file_pos;
           cb = saved_cb;
         }
@@ -4229,6 +4310,7 @@ bool compress_file(float min_percent, float max_percent) {
 
         long long mp3_length = 0;
 
+        push_position_to_saved_input_file_pos_stack(input_file_pos);
         saved_input_file_pos = input_file_pos;
         saved_cb = cb;
 
@@ -4339,13 +4421,14 @@ bool compress_file(float min_percent, float max_percent) {
             suppress_mp3_type_until[type] = position_length_sum;
             if (DEBUG_MODE) {
               print_debug_percent();
-              cout << "Unsupported MP3 type found at position " << saved_input_file_pos << ", length " << mp3_length << endl;
+              cout << "Unsupported MP3 type found at position " << saved_input_file_pos_stack_to_string() << ", length " << mp3_length << endl;
               printf ("Type: %s\n", filetype_description[type]);
             }
           }
         }
 
         if (!compressed_data_found) {
+          pop_position_to_saved_input_file_pos_stack();
           input_file_pos = saved_input_file_pos;
           cb = saved_cb;
         }
@@ -4362,6 +4445,7 @@ bool compress_file(float min_percent, float max_percent) {
           if (compression_method == 8) {
             int windowbits = (in_buf[cb + 8] >> 4) + 8;
 
+            push_position_to_saved_input_file_pos_stack(input_file_pos);
             saved_input_file_pos = input_file_pos;
             saved_cb = cb;
 
@@ -4372,6 +4456,7 @@ bool compress_file(float min_percent, float max_percent) {
             cb += 10;
 
             if (!compressed_data_found) {
+              pop_position_to_saved_input_file_pos_stack();
               input_file_pos = saved_input_file_pos;
               cb = saved_cb;
             }
@@ -4406,7 +4491,7 @@ bool compress_file(float min_percent, float max_percent) {
         } while (base64_header_length < (CHECKBUF_SIZE - 2));
 
         if (found_double_crlf) {
-
+          push_position_to_saved_input_file_pos_stack(input_file_pos);
           saved_input_file_pos = input_file_pos;
           saved_cb = cb;
 
@@ -4417,6 +4502,7 @@ bool compress_file(float min_percent, float max_percent) {
           cb += base64_header_length;
 
           if (!compressed_data_found) {
+            pop_position_to_saved_input_file_pos_stack();
             input_file_pos = saved_input_file_pos;
             cb = saved_cb;
           }
@@ -4430,12 +4516,14 @@ bool compress_file(float min_percent, float max_percent) {
       if ((in_buf[cb] == 'B') && (in_buf[cb + 1] == 'Z') && (in_buf[cb + 2] == 'h')) {
         int compression_level = in_buf[cb + 3] - '0';
         if ((compression_level >= 1) && (compression_level <= 9)) {
+          push_position_to_saved_input_file_pos_stack(input_file_pos);
           saved_input_file_pos = input_file_pos;
           saved_cb = cb;
 
           try_decompression_bzip2(compression_level);
 
           if (!compressed_data_found) {
+            pop_position_to_saved_input_file_pos_stack();
             input_file_pos = saved_input_file_pos;
             cb = saved_cb;
           }
@@ -4472,6 +4560,7 @@ bool compress_file(float min_percent, float max_percent) {
             int windowbits = (in_buf[cb] >> 4) + 8;
 
             if (check_inf_result(cb + 2, -windowbits)) {
+              push_position_to_saved_input_file_pos_stack(input_file_pos);
               saved_input_file_pos = input_file_pos;
               saved_cb = cb;
 
@@ -4482,6 +4571,7 @@ bool compress_file(float min_percent, float max_percent) {
               cb += 2;
 
               if (!compressed_data_found) {
+                pop_position_to_saved_input_file_pos_stack();
                 input_file_pos = saved_input_file_pos;
                 cb = saved_cb;
               }
@@ -4513,6 +4603,7 @@ bool compress_file(float min_percent, float max_percent) {
       }
 
       if (!ignore_this_position) {
+        push_position_to_saved_input_file_pos_stack(input_file_pos);
         saved_input_file_pos = input_file_pos;
         saved_cb = cb;
 
@@ -4521,6 +4612,7 @@ bool compress_file(float min_percent, float max_percent) {
         }
 
         if (!compressed_data_found) {
+          pop_position_to_saved_input_file_pos_stack();
           input_file_pos = saved_input_file_pos;
           cb = saved_cb;
         }
@@ -4566,6 +4658,8 @@ void decompress_file() {
 
   if (recursion_depth == 0) {
     if (!DEBUG_MODE) show_progress(0, false, false);
+
+    add_recursion_to_saved_input_file_pos_stack();
     read_header();
   }
 
@@ -6419,7 +6513,7 @@ void try_decompression_gif(unsigned char version[5]) {
 
   if (DEBUG_MODE) {
   print_debug_percent();
-  cout << "Possible GIF found at position " << input_file_pos << endl;;
+  cout << "Possible GIF found at position " << saved_input_file_pos_stack_to_string() << endl;;
   }
 
   seek_64(fin, input_file_pos);
@@ -6568,7 +6662,7 @@ void try_decompression_jpg (long long jpg_length, bool progressive_jpg) {
           } else {
             printf ("Possible JPG found at position ");
           }
-          cout << saved_input_file_pos << ", length " << jpg_length << endl;
+          cout << saved_input_file_pos_stack_to_string() << ", length " << jpg_length << endl;
           // do not recompress non-progressive JPGs when prog_only is set
           if ((!progressive_jpg) && (prog_only)) {
             printf("Skipping (only progressive JPGs mode set)\n");
@@ -6850,7 +6944,7 @@ void try_decompression_mp3 (long long mp3_length) {
 
         if (DEBUG_MODE) {
           print_debug_percent();
-          cout << "Possible MP3 found at position " << saved_input_file_pos << ", length " << mp3_length << endl;
+          cout << "Possible MP3 found at position " << saved_input_file_pos_stack_to_string() << ", length " << mp3_length << endl;
         }
 
         bool mp3_success = false;
@@ -7109,7 +7203,7 @@ void try_decompression_bzip2(int compression_level) {
 
           if (DEBUG_MODE) {
           print_debug_percent();
-          cout << "Possible bZip2-Stream found at position " << saved_input_file_pos << ", compression level = " << compression_level << endl;
+          cout << "Possible bZip2-Stream found at position " << saved_input_file_pos_stack_to_string() << ", compression level = " << compression_level << endl;
           cout << "Compressed size: " << compressed_stream_size << endl;
 
           ftempout = tryOpen(tempfile1, "rb");
@@ -7429,7 +7523,7 @@ void try_decompression_base64(int base64_header_length) {
 
           if (DEBUG_MODE) {
           print_debug_percent();
-          cout << "Possible Base64-Stream (line_case " << line_case << ", line_count " << line_count << ") found at position " << saved_input_file_pos << endl;
+          cout << "Possible Base64-Stream (line_case " << line_case << ", line_count " << line_count << ") found at position " << saved_input_file_pos_stack_to_string() << endl;
           cout << "Can be decoded to " << identical_bytes << " bytes" << endl;
           }
 
@@ -7950,6 +8044,7 @@ recursion_result recursion_compress(long long compressed_bytes, long long decomp
   compression_otf_method = OTF_NONE;
 
   recursion_depth++;
+  add_recursion_to_saved_input_file_pos_stack();
   if (DEBUG_MODE) {
     printf("Recursion start - new recursion depth %i\n", recursion_depth);
   }
@@ -7971,6 +8066,7 @@ recursion_result recursion_compress(long long compressed_bytes, long long decomp
 
   recursion_depth--;
   recursion_pop();
+  remove_recursion_from_saved_input_file_pos_stack();
 
   if (rescue_anything_was_used)
     anything_was_used = true;
@@ -8045,6 +8141,7 @@ recursion_result recursion_decompress(long long recursion_data_length) {
   compression_otf_method = OTF_NONE;
 
   recursion_depth++;
+  add_recursion_to_saved_input_file_pos_stack();
   if (DEBUG_MODE) {
     printf("Recursion start - new recursion depth %i\n", recursion_depth);
   }
@@ -8058,6 +8155,7 @@ recursion_result recursion_decompress(long long recursion_data_length) {
 
   recursion_depth--;
   recursion_pop();
+  remove_recursion_from_saved_input_file_pos_stack();
 
   if (DEBUG_MODE) {
     printf("Recursion end - back to recursion depth %i\n", recursion_depth);
