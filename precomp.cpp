@@ -276,6 +276,7 @@ int penalty_bytes_len = 0;
 long long* ignore_list = NULL; // positions to ignore
 int ignore_list_len = 0;
 
+#define DEFAULT_INPUT_FILE_POS_SEPARATOR '_'
 vector<vector<long long>*>* saved_input_file_pos_recursion_stack = new vector<vector<long long>*>();
 long long saved_input_file_pos, saved_cb;
 int min_ident_size = 4;
@@ -2377,18 +2378,18 @@ void pop_position_to_saved_input_file_pos_stack()
   }
 }
 
-void add_recursion_to_saved_input_file_pos_stack()
+void add_recursion_depth_to_saved_input_file_pos_stack()
 {
   saved_input_file_pos_recursion_stack->push_back(new vector<long long>());
 }
 
-void remove_recursion_from_saved_input_file_pos_stack()
+void remove_recursion_depth_from_saved_input_file_pos_stack()
 {
   delete saved_input_file_pos_recursion_stack->back();
   saved_input_file_pos_recursion_stack->pop_back();
 }
 
-string saved_input_file_pos_stack_to_string()
+string saved_input_file_pos_stack_to_string(char separator = DEFAULT_INPUT_FILE_POS_SEPARATOR)
 {
   stringstream ss;
   for (size_t i = 0; i < saved_input_file_pos_recursion_stack->size(); i++)
@@ -2404,7 +2405,7 @@ string saved_input_file_pos_stack_to_string()
 
     if (i < saved_input_file_pos_recursion_stack->size() - 1)
     {
-      ss << '_';
+      ss << separator;
     }
   }
 
@@ -2415,7 +2416,7 @@ void delete_saved_input_file_pos_recursion_stack()
 {
   while (!saved_input_file_pos_recursion_stack->empty())
   {
-    remove_recursion_from_saved_input_file_pos_stack();
+    remove_recursion_depth_from_saved_input_file_pos_stack();
   }
   delete saved_input_file_pos_recursion_stack;
 }
@@ -3749,7 +3750,7 @@ bool compress_file(float min_percent, float max_percent) {
   global_max_percent = max_percent;
 
   if (recursion_depth == 0) {
-    add_recursion_to_saved_input_file_pos_stack();
+    add_recursion_depth_to_saved_input_file_pos_stack();
     write_header();
   }
   uncompressed_length = -1;
@@ -4659,7 +4660,7 @@ void decompress_file() {
   if (recursion_depth == 0) {
     if (!DEBUG_MODE) show_progress(0, false, false);
 
-    add_recursion_to_saved_input_file_pos_stack();
+    add_recursion_depth_to_saved_input_file_pos_stack();
     read_header();
   }
 
@@ -8044,7 +8045,7 @@ recursion_result recursion_compress(long long compressed_bytes, long long decomp
   compression_otf_method = OTF_NONE;
 
   recursion_depth++;
-  add_recursion_to_saved_input_file_pos_stack();
+  add_recursion_depth_to_saved_input_file_pos_stack();
   if (DEBUG_MODE) {
     printf("Recursion start - new recursion depth %i\n", recursion_depth);
   }
@@ -8066,7 +8067,7 @@ recursion_result recursion_compress(long long compressed_bytes, long long decomp
 
   recursion_depth--;
   recursion_pop();
-  remove_recursion_from_saved_input_file_pos_stack();
+  remove_recursion_depth_from_saved_input_file_pos_stack();
 
   if (rescue_anything_was_used)
     anything_was_used = true;
@@ -8141,7 +8142,7 @@ recursion_result recursion_decompress(long long recursion_data_length) {
   compression_otf_method = OTF_NONE;
 
   recursion_depth++;
-  add_recursion_to_saved_input_file_pos_stack();
+  add_recursion_depth_to_saved_input_file_pos_stack();
   if (DEBUG_MODE) {
     printf("Recursion start - new recursion depth %i\n", recursion_depth);
   }
@@ -8155,7 +8156,7 @@ recursion_result recursion_decompress(long long recursion_data_length) {
 
   recursion_depth--;
   recursion_pop();
-  remove_recursion_from_saved_input_file_pos_stack();
+  remove_recursion_depth_from_saved_input_file_pos_stack();
 
   if (DEBUG_MODE) {
     printf("Recursion end - back to recursion depth %i\n", recursion_depth);
